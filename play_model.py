@@ -284,7 +284,12 @@ class InputBox(UIElement):
 class PlayModelApp:
     def __init__(self) -> None:
         pygame.init()
-        pygame.mixer.init()
+        # Inicializar el mixer de pygame con la frecuencia exacta de Arcade Gym (16000 Hz, mono, 16-bit)
+        try:
+            pygame.mixer.quit()
+            pygame.mixer.init(frequency=16000, size=-16, channels=1)
+        except Exception:
+            pygame.mixer.init()
         pygame.display.set_caption("ARC-AGI / Arcade Gym Model Evaluator GUI")
         
         # Dimensiones de la pantalla
@@ -487,22 +492,20 @@ class PlayModelApp:
             ay = self.info.get("agent_y", self.grid_size // 2)
             action_data = {"x": int(ax), "y": int(ay)}
             
-        # Sonido
-        if self.chk_sound.checked:
-            # Generar sonido sintético básico
-            try:
-                sound_kind = "step" if action_id <= 4 else ("launch" if action_id == 5 else "slide")
-                evt = make_audio_event(sound_kind)
-                # Reproducir usando pygame mixer si es posible
-                # (Para simplificar no reproducimos la onda cruda directamente en este script de GUI,
-                # pero guardamos la intención de sonido)
-            except Exception:
-                pass
-
         # Paso en el entorno
         res = self.env.step(action_id, action_data=action_data)
         self.obs = res.observation
         self.info = res.info
+        
+        # Sonido: Reproducir el sonido sintético real generado por el motor del juego en tiempo real
+        if self.chk_sound.checked and res.audio_event and res.audio_event.kind != "silence":
+            try:
+                # Convertir la onda float32 [-1.0, 1.0] a PCM16 de 16 bits
+                waveform_int16 = (res.audio_event.waveform * 32767).astype(np.int16)
+                sound = pygame.mixer.Sound(buffer=waveform_int16.tobytes())
+                sound.play()
+            except Exception:
+                pass
         
         # Calcular métricas
         self.total_actions += 1
