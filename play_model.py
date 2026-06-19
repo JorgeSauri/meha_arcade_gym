@@ -590,19 +590,52 @@ class PlayModelApp:
                 "content": f"Current game: {self.current_game_id}. Step: {self.step_idx}. Cumulative Reward: {self.cum_reward:.2f}.\nGrid Board:\n{grid_str}\n\nOutput your reasoning and next action sequence:"
             })
             
+        # Payload inicial con parámetros estándar
         payload = {
             "model": model_name,
             "messages": messages,
             "temperature": 0.2,
-            "max_tokens": 400  # Aumentado para dar espacio al razonamiento
+            "max_tokens": 400
         }
         
         try:
             # Endpoint de chat completions
             url = f"{api_url}/chat/completions"
-            response = requests.post(url, headers=headers, json=payload, timeout=15)
-            if response.status_code != 200:
-                self.log(f"API Error {response.status_code}: {response.text[:100]}")
+            
+            # Reintentos dinámicos autocurativos para máxima compatibilidad universal (OpenAI o-series, DeepSeek, Claude, etc.)
+            response = None
+            for attempt in range(3):
+                response = requests.post(url, headers=headers, json=payload, timeout=15)
+                if response.status_code == 200:
+                    break
+                elif response.status_code == 400:
+                    err_msg = response.text.lower()
+                    adjusted = False
+                    
+                    # Si el modelo no soporta max_tokens (ej. OpenAI o1/o3/o4), cambiamos a max_completion_tokens
+                    if "max_tokens" in err_msg and "max_tokens" in payload:
+                        del payload["max_tokens"]
+                        payload["max_completion_tokens"] = 400
+                        adjusted = True
+                        self.log("Auto-ajuste: 'max_tokens' no soportado. Cambiando a 'max_completion_tokens'...")
+                        
+                    # Si el modelo no soporta temperature (ej. modelos de razonamiento), lo eliminamos
+                    if "temperature" in err_msg and "temperature" in payload:
+                        del payload["temperature"]
+                        adjusted = True
+                        self.log("Auto-ajuste: 'temperature' no soportada. Eliminando parámetro...")
+                        
+                    if adjusted:
+                        continue
+                    else:
+                        break
+                else:
+                    break
+                    
+            if response is None or response.status_code != 200:
+                err_text = response.text[:100] if response is not None else "No response"
+                status = response.status_code if response is not None else "None"
+                self.log(f"API Error {status}: {err_text}")
                 return 8 # Wait on error
                 
             res_data = response.json()
