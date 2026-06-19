@@ -17,6 +17,7 @@ This repository is fully self-contained and open-source, allowing third-party re
 * **Interactive Pygame GUI:** A beautiful, dark-themed control panel with live performance metrics, console logs, a dedicated model reasoning panel, and manual play support.
 * **Live Metrics Dashboard:** Tracks **Motor Passivity (No-Op Rate)**, **Causal Coverage (Exploration)**, **Cumulative Reward**, and **Task Completion (Solved Rate)** in real-time.
 * **Customizable Episode Length:** Choose exactly how many steps a model or player can take per episode with the **Max Steps** selector.
+* **Intelligent Conversation Memory:** Add context and memory to your evaluations! The GUI features a **Conversation History Length** selector that maintains a sliding window of past observations, reasoning steps, and executed actions, allowing models to learn from their immediate history.
 * **Dedicated Reasoning Panel:** Watch your LLM's raw thoughts, observations, and step-by-step reasoning unfold in real-time in a beautifully formatted column.
 
 ---
@@ -49,6 +50,7 @@ The GUI features dedicated selectors that allow you to customize the evaluation:
   * **Specific Games:** Use the `<` and `>` arrow buttons on the selector to choose any of the 8 custom games by their exact paper code names (e.g., `p61_sort`, `nibbles`, `platformer`, `fabulous_fred`).
   * **Next Random Game:** Click this button to instantly choose and load another random game from the suite.
 * **Max Steps per Episode:** Type any integer (e.g., `100`, `200`, `500`) to define the maximum steps allowed per episode. The environment will dynamically read and apply this limit upon reset.
+* **Conversation History Length:** Type any integer (e.g., `3`, `5`, `10`) to define how many past conversation turns (exchanges) the model should keep in its context window. The intelligent memory manager will automatically prune older turns while keeping the `system_prompt` permanently at the very first position.
 
 ### 🕹️ Manual Play Mode
 Want to play the games yourself to understand their dynamics?
