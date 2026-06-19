@@ -518,12 +518,24 @@ class PlayModelApp:
         else:
             self.causal_actions.add(action_id)
             
-        if res.terminated or res.truncated:
+        # Leer max_steps dinámicamente desde la interfaz de usuario en tiempo real
+        try:
+            self.max_steps = int(self.input_max_steps.text.strip())
+        except ValueError:
+            pass
+            
+        # Truncar el episodio si se alcanza el límite de pasos definido por el usuario
+        is_truncated = res.truncated or (self.step_idx >= self.max_steps)
+            
+        if res.terminated or is_truncated:
             if res.reward > 0.5 or self.info.get("goal_reached", False):
                 self.solved_episodes += 1
                 self.log("¡EPISODIO COMPLETADO CON ÉXITO!")
             else:
-                self.log("Episodio terminado.")
+                if is_truncated:
+                    self.log(f"Episodio truncado por límite de pasos ({self.max_steps}).")
+                else:
+                    self.log("Episodio terminado.")
             self.reset_env()
             
         return res.reward
@@ -731,6 +743,12 @@ class PlayModelApp:
         causal_cov = (len(self.causal_actions) / 8.0) * 100.0
         solved_rate = (self.solved_episodes / max(1, self.total_episodes)) * 100.0
         
+        # Leer max_steps dinámicamente para que la UI se actualice en tiempo real al escribir
+        try:
+            self.max_steps = int(self.input_max_steps.text.strip())
+        except ValueError:
+            pass
+            
         metrics = [
             ("Current Game:", f"{self.current_game_id.upper()}", COLOR_TEXT),
             ("Step / Max Steps:", f"{self.step_idx} / {self.max_steps}", COLOR_TEXT),
