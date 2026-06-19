@@ -292,8 +292,8 @@ class PlayModelApp:
         self.cell_scale = 6
         self.grid_px = self.grid_size * self.cell_scale  # 384 px
         
-        self.sidebar_width = 460
-        self.width = self.grid_px + self.sidebar_width  # 844 px
+        self.sidebar_width = 896
+        self.width = self.grid_px + self.sidebar_width  # 1280 px
         self.height = 840  # Incrementado a 840 para evitar superposiciones
         self.screen = pygame.display.set_mode((self.width, self.height))
         self.clock = pygame.time.Clock()
@@ -314,6 +314,9 @@ class PlayModelApp:
         self.info: dict[str, Any] = {}
         self.step_idx = 0
         self.max_steps = 200
+        
+        # Razonamiento del modelo
+        self.last_model_reasoning = "Ninguna consulta realizada aún. El razonamiento del modelo se mostrará aquí en tiempo real."
         
         # Métricas en vivo
         self.cum_reward = 0.0
@@ -342,20 +345,23 @@ class PlayModelApp:
         game_options = ["random"] + list(GAME_CLASSES.keys())
         self.selector_game = Selector(self.grid_px + 20, start_y + 235, 420, 32, "Select Game (ARC-AGI / Arcade Gym)", game_options, default_idx=0, callback=self.on_game_selected)
 
-        # Checkboxes colocados verticalmente para evitar superposiciones (desplazados hacia abajo para dar espacio al selector)
-        self.chk_vision = Checkbox(self.grid_px + 20, start_y + 285, "Vision Enabled (Sends board image)", checked=True)
-        self.chk_sound = Checkbox(self.grid_px + 20, start_y + 310, "Sound Enabled", checked=True)
+        # Input de Max Steps
+        self.input_max_steps = InputBox(self.grid_px + 20, start_y + 295, 420, 32, "Max Steps per Episode", "200")
+
+        # Checkboxes colocados verticalmente para evitar superposiciones (desplazados hacia abajo para dar espacio al selector y max steps)
+        self.chk_vision = Checkbox(self.grid_px + 20, start_y + 345, "Vision Enabled (Sends board image)", checked=True)
+        self.chk_sound = Checkbox(self.grid_px + 20, start_y + 370, "Sound Enabled", checked=True)
         
         # Botones de control con más espacio vertical
-        self.btn_play = Button(self.grid_px + 20, start_y + 345, 200, 36, "Start Model Play", self.toggle_model_play, color=COLOR_SUCCESS)
-        self.btn_manual = Button(self.grid_px + 240, start_y + 345, 200, 36, "Manual Play Mode", self.toggle_manual_play, color=COLOR_ACCENT)
-        self.btn_reset = Button(self.grid_px + 20, start_y + 395, 200, 36, "Reset Game", self.reset_env, color=COLOR_DANGER)
-        self.btn_next_game = Button(self.grid_px + 240, start_y + 395, 200, 36, "Next Random Game", self.next_game, color=COLOR_PANEL)
+        self.btn_play = Button(self.grid_px + 20, start_y + 405, 200, 36, "Start Model Play", self.toggle_model_play, color=COLOR_SUCCESS)
+        self.btn_manual = Button(self.grid_px + 240, start_y + 405, 200, 36, "Manual Play Mode", self.toggle_manual_play, color=COLOR_ACCENT)
+        self.btn_reset = Button(self.grid_px + 20, start_y + 455, 200, 36, "Reset Game", self.reset_env, color=COLOR_DANGER)
+        self.btn_next_game = Button(self.grid_px + 240, start_y + 455, 200, 36, "Next Random Game", self.next_game, color=COLOR_PANEL)
         
         self.ui_elements = [
             self.input_api_key, self.input_api_url, self.input_model,
             self.btn_preset_openai, self.btn_preset_hf, self.btn_preset_ollama, self.btn_preset_lmstudio,
-            self.selector_game,
+            self.selector_game, self.input_max_steps,
             self.chk_vision, self.chk_sound,
             self.btn_play, self.btn_manual, self.btn_reset, self.btn_next_game
         ]
@@ -370,6 +376,12 @@ class PlayModelApp:
         print(f"[GUI Log] {message}")
 
     def reset_env(self) -> None:
+        # Actualizar max_steps dinámicamente desde la interfaz de usuario
+        try:
+            self.max_steps = int(self.input_max_steps.text.strip())
+        except ValueError:
+            self.max_steps = 200  # Valor por defecto
+            
         target_game = None if self.selected_game_id == "random" else self.selected_game_id
         self.log(f"Inicializando juego: {self.selected_game_id}...")
         seed = random.randint(0, 999999)
@@ -527,7 +539,7 @@ class PlayModelApp:
         
         self.log("Consultando al modelo...")
         
-        # Construir prompt
+        # Construir prompt pidiendo razonamiento explícito
         system_prompt = (
             "You are an AI agent playing an ARC-style grid game. "
             "Your objective is to solve the puzzle by executing actions. "
@@ -540,9 +552,9 @@ class PlayModelApp:
             "A6: Localized Action (interact at agent position)\n"
             "A7: Secondary Action\n"
             "A8: Wait / No-Op\n\n"
-            "Analyze the current game state and output a list of actions to execute, "
-            "separated by commas, inside square brackets. Example: [A1, A3, A5]. "
-            "Do not write any other text. Output ONLY the action list."
+            "First, analyze the current board state, describe your observations, and explain your step-by-step reasoning. "
+            "Then, at the very end of your response, output your chosen action sequence inside square brackets, "
+            "separated by commas. Example: [A1, A3, A5]."
         )
         
         headers = {
@@ -560,7 +572,7 @@ class PlayModelApp:
             messages.append({
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": f"Current game: {self.current_game_id}. Step: {self.step_idx}. Cumulative Reward: {self.cum_reward:.2f}. Output your next action sequence:"},
+                    {"type": "text", "text": f"Current game: {self.current_game_id}. Step: {self.step_idx}. Cumulative Reward: {self.cum_reward:.2f}. Output your reasoning and next action sequence:"},
                     {
                         "type": "image_url",
                         "image_url": {
@@ -575,14 +587,14 @@ class PlayModelApp:
             grid_str = "\n".join(" ".join(str(int(cell)) for cell in row) for row in frame)
             messages.append({
                 "role": "user",
-                "content": f"Current game: {self.current_game_id}. Step: {self.step_idx}. Cumulative Reward: {self.cum_reward:.2f}.\nGrid Board:\n{grid_str}\n\nOutput your next action sequence:"
+                "content": f"Current game: {self.current_game_id}. Step: {self.step_idx}. Cumulative Reward: {self.cum_reward:.2f}.\nGrid Board:\n{grid_str}\n\nOutput your reasoning and next action sequence:"
             })
             
         payload = {
             "model": model_name,
             "messages": messages,
             "temperature": 0.2,
-            "max_tokens": 50
+            "max_tokens": 400  # Aumentado para dar espacio al razonamiento
         }
         
         try:
@@ -595,15 +607,24 @@ class PlayModelApp:
                 
             res_data = response.json()
             content = res_data["choices"][0]["message"]["content"].strip()
-            self.log(f"Model Response: {content}")
             
-            # Extraer secuencia de acciones
+            # Guardar el razonamiento completo para mostrarlo en el panel dedicado
+            self.last_model_reasoning = content
+            
+            # Extraer secuencia de acciones dentro de corchetes de forma robusta
             import re
-            actions = re.findall(r'A[1-8]', content)
+            match = re.search(r'\[\s*(A[1-8](?:\s*,\s*A[1-8])*)\s*\]', content)
+            if match:
+                action_block = match.group(1)
+                actions = re.findall(r'A[1-8]', action_block)
+            else:
+                actions = re.findall(r'A[1-8]', content)
+                
             if actions:
                 # Ejecutar la primera acción encontrada
                 action_str = actions[0]
                 action_id = int(action_str[1])
+                self.log(f"Model Response: {actions}")
                 self.log(f"Executing Action: {action_str} ({ACTION_LABELS[action_id]})")
                 return action_id
             else:
@@ -666,10 +687,10 @@ class PlayModelApp:
             lbl_val = self.font_large.render(val, True, color) if "Solved" in name or "Reward" in name else self.font_bold.render(val, True, color)
             self.screen.blit(lbl_val, (290, y_pos))
 
-        # 3. Dibujar Sidebar (Derecha)
-        sidebar_rect = pygame.Rect(self.grid_px + 10, 10, self.sidebar_width - 20, self.height - 20)
-        pygame.draw.rect(self.screen, COLOR_PANEL, sidebar_rect, border_radius=6)
-        pygame.draw.rect(self.screen, COLOR_BORDER, sidebar_rect, width=1, border_radius=6)
+        # 3. Dibujar Sidebar de Configuración (Medio)
+        settings_rect = pygame.Rect(self.grid_px + 15, 10, 430, self.height - 20)
+        pygame.draw.rect(self.screen, COLOR_PANEL, settings_rect, border_radius=6)
+        pygame.draw.rect(self.screen, COLOR_BORDER, settings_rect, width=1, border_radius=6)
         
         # Título Sidebar
         title_surf = self.font_title.render("MODEL CONNECTION SETTINGS", True, (255, 255, 255))
@@ -680,20 +701,68 @@ class PlayModelApp:
             if isinstance(elem, (InputBox, Button, Checkbox, Selector)):
                 elem.draw(self.screen, self.font)
                 
-        # 4. Consola de Logs en vivo (Abajo en la Sidebar)
-        console_y = 495
-        console_rect = pygame.Rect(self.grid_px + 20, console_y, 420, 315)
+        # 4. Consola de Logs en vivo (Abajo en la Sidebar de Configuración)
+        console_y = 545
+        console_rect = pygame.Rect(self.grid_px + 20, console_y, 420, 265)
         pygame.draw.rect(self.screen, COLOR_INPUT_BG, console_rect, border_radius=4)
         pygame.draw.rect(self.screen, COLOR_BORDER, console_rect, width=1, border_radius=4)
         
         # Título Consola
-        con_title = self.font_bold.render("LIVE CONSOLE LOGS & REASONING", True, COLOR_ACCENT)
+        con_title = self.font_bold.render("LIVE CONSOLE LOGS", True, COLOR_ACCENT)
         self.screen.blit(con_title, (self.grid_px + 25, console_y - 20))
         
         # Dibujar líneas de log
-        for idx, log_line in enumerate(self.console_logs[-16:]):  # Mostrar las últimas 16 líneas para que quepan en 315px de alto
+        for idx, log_line in enumerate(self.console_logs[-13:]):  # Mostrar las últimas 13 líneas para que quepan en 265px de alto
             log_surf = self.font.render(log_line, True, COLOR_TEXT if "Executing" in log_line or "Response" in log_line else COLOR_TEXT_MUTED)
             self.screen.blit(log_surf, (self.grid_px + 28, console_y + 8 + idx * 18))
+
+        # 5. Dibujar Panel de Razonamiento del Modelo (Derecha)
+        reasoning_rect = pygame.Rect(self.grid_px + 460, 10, 410, self.height - 20)
+        pygame.draw.rect(self.screen, COLOR_PANEL, reasoning_rect, border_radius=6)
+        pygame.draw.rect(self.screen, COLOR_BORDER, reasoning_rect, width=1, border_radius=6)
+        
+        # Título Panel Razonamiento
+        reas_title = self.font_title.render("MODEL REASONING & THOUGHTS", True, COLOR_SUCCESS)
+        self.screen.blit(reas_title, (self.grid_px + 475, 25))
+        
+        # Caja de texto para el razonamiento
+        text_box_rect = pygame.Rect(self.grid_px + 475, 55, 380, self.height - 85)
+        pygame.draw.rect(self.screen, COLOR_INPUT_BG, text_box_rect, border_radius=4)
+        pygame.draw.rect(self.screen, COLOR_BORDER, text_box_rect, width=1, border_radius=4)
+        
+        # Dibujar el texto del razonamiento con ajuste de línea (wrap)
+        def draw_wrapped_text(surface, text, rect, font, color):
+            words = text.split(' ')
+            lines = []
+            current_line = []
+            for word in words:
+                if '\n' in word:
+                    sub_words = word.split('\n')
+                    for i, sw in enumerate(sub_words):
+                        if i > 0:
+                            lines.append(' '.join(current_line))
+                            current_line = []
+                        if sw:
+                            current_line.append(sw)
+                else:
+                    test_line = ' '.join(current_line + [word])
+                    if font.size(test_line)[0] < rect.width - 16:
+                        current_line.append(word)
+                    else:
+                        lines.append(' '.join(current_line))
+                        current_line = [word]
+            if current_line:
+                lines.append(' '.join(current_line))
+                
+            y = rect.y + 8
+            for line in lines:
+                if y + font.get_linesize() > rect.bottom - 8:
+                    break
+                surf = font.render(line, True, color)
+                surface.blit(surf, (rect.x + 8, y))
+                y += font.get_linesize() + 2
+                
+        draw_wrapped_text(self.screen, self.last_model_reasoning, text_box_rect, self.font, COLOR_TEXT)
 
         pygame.display.flip()
 
