@@ -98,19 +98,3 @@ The GUI tracks and displays the following key metrics defined in the MEHA paper:
 6. **`sky_catch` (Catcher):** Move a basket left and right to catch falling reward objects while dodging deadly hazards.
 7. **`dr_capsule` (Dr. Mario Puzzle):** Rotate and drop bicolor capsules to form same-color matches and clear viruses.
 8. **`fabulous_fred` (Simon Memory):** Watch the machine's color/sound sequence and repeat it in the correct order.
-
----
-
-## 📝 Citation and Academic Reference
-
-If you use this benchmark suite in your research, please cite our paper:
-
-```bibtex
-@inproceedings{sauri2026meha,
-  title={MEHA: Interleaved Wake-Sleep Consolidation for Spatial Grounding in Small LLM-Based Agents},
-  author={Sauri, Jorge},
-  booktitle={Proceedings of the 2026 Annual International Conference on Biologically Inspired Cognitive Architectures (BICA 2026)},
-  year={2026},
-  publisher={Springer}
-}
-```
