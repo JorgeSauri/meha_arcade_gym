@@ -14,8 +14,10 @@ This repository is fully self-contained and open-source, allowing third-party re
 * **8 Diverse Games:** Includes physics-based puzzles, memory games, and hand-eye coordination challenges.
 * **OpenAI-Compatible API Integration:** Easily connect any frontier-scale model (e.g., GPT-4o, GPT-4o-mini) or local LLM (via Ollama, LM Studio, vLLM, etc.) directly through the GUI.
 * **Vision & Text Modes:** Evaluate models using direct visual board inputs (PNG frames) or flat text-based grid arrays.
-* **Interactive Pygame GUI:** A beautiful, dark-themed control panel with live performance metrics, console logs, and manual play support.
+* **Interactive Pygame GUI:** A beautiful, dark-themed control panel with live performance metrics, console logs, a dedicated model reasoning panel, and manual play support.
 * **Live Metrics Dashboard:** Tracks **Motor Passivity (No-Op Rate)**, **Causal Coverage (Exploration)**, **Cumulative Reward**, and **Task Completion (Solved Rate)** in real-time.
+* **Customizable Episode Length:** Choose exactly how many steps a model or player can take per episode with the **Max Steps** selector.
+* **Dedicated Reasoning Panel:** Watch your LLM's raw thoughts, observations, and step-by-step reasoning unfold in real-time in a beautifully formatted column.
 
 ---
 
@@ -40,11 +42,13 @@ To launch the Pygame GUI, simply run:
 python arcade_gym/play_model.py
 ```
 
-### 🕹️ Game Selection
-The GUI features a dedicated **Game Selector** that allows you to choose exactly which game to play or evaluate:
-* **`random` (Default):** The environment automatically selects a random game from the suite upon initialization or reset.
-* **Specific Games:** Use the `<` and `>` arrow buttons on the selector to choose any of the 8 custom games by their exact paper code names (e.g., `p61_sort`, `nibbles`, `platformer`, `fabulous_fred`).
-* **Next Random Game:** Click this button to instantly choose and load another random game from the suite.
+### 🕹️ Game Selection & Episode Length
+The GUI features dedicated selectors that allow you to customize the evaluation:
+* **Game Selector:** Choose exactly which game to play or evaluate.
+  * **`random` (Default):** The environment automatically selects a random game from the suite upon initialization or reset.
+  * **Specific Games:** Use the `<` and `>` arrow buttons on the selector to choose any of the 8 custom games by their exact paper code names (e.g., `p61_sort`, `nibbles`, `platformer`, `fabulous_fred`).
+  * **Next Random Game:** Click this button to instantly choose and load another random game from the suite.
+* **Max Steps per Episode:** Type any integer (e.g., `100`, `200`, `500`) to define the maximum steps allowed per episode. The environment will dynamically read and apply this limit upon reset.
 
 ### 🕹️ Manual Play Mode
 Want to play the games yourself to understand their dynamics?
