@@ -615,7 +615,7 @@ class PlayModelApp:
                     # Si el modelo no soporta max_tokens (ej. OpenAI o1/o3/o4), cambiamos a max_completion_tokens
                     if "max_tokens" in err_msg and "max_tokens" in payload:
                         del payload["max_tokens"]
-                        payload["max_completion_tokens"] = 400
+                        payload["max_completion_tokens"] = 2048  # Aumentado a 2048 para dar suficiente presupuesto a los tokens de razonamiento internos
                         adjusted = True
                         self.log("Auto-ajuste: 'max_tokens' no soportado. Cambiando a 'max_completion_tokens'...")
                         
@@ -662,6 +662,8 @@ class PlayModelApp:
                 return action_id
             else:
                 self.log("No valid action format found, defaulting to A8 (Wait)")
+                # Mostrar los primeros 80 caracteres de la respuesta para depurar por qué no se encontraron acciones
+                self.log(f"Raw response preview: {content[:80]}...")
                 return 8
         except Exception as e:
             self.log(f"Network/API Error: {str(e)[:80]}")
