@@ -315,6 +315,10 @@ class PlayModelApp:
         self.step_idx = 0
         self.max_steps = 200
         
+        # Historial de conversación y memoria
+        self.conversation_history = []
+        self.last_executed_action_str = "None (Initial State)"
+        
         # Razonamiento del modelo
         self.last_model_reasoning = "Ninguna consulta realizada aún. El razonamiento del modelo se mostrará aquí en tiempo real."
         
@@ -345,8 +349,9 @@ class PlayModelApp:
         game_options = ["random"] + list(GAME_CLASSES.keys())
         self.selector_game = Selector(self.grid_px + 20, start_y + 235, 420, 32, "Select Game (ARC-AGI / Arcade Gym)", game_options, default_idx=0, callback=self.on_game_selected)
 
-        # Input de Max Steps
-        self.input_max_steps = InputBox(self.grid_px + 20, start_y + 295, 420, 32, "Max Steps per Episode", "200")
+        # Inputs de Max Steps y Conversation History Length (lado a lado)
+        self.input_max_steps = InputBox(self.grid_px + 20, start_y + 295, 200, 32, "Max Steps per Episode", "200")
+        self.input_history_len = InputBox(self.grid_px + 240, start_y + 295, 200, 32, "Conv. History Length", "5")
 
         # Checkboxes colocados verticalmente para evitar superposiciones (desplazados hacia abajo para dar espacio al selector y max steps)
         self.chk_vision = Checkbox(self.grid_px + 20, start_y + 345, "Vision Enabled (Sends board image)", checked=True)
@@ -361,7 +366,7 @@ class PlayModelApp:
         self.ui_elements = [
             self.input_api_key, self.input_api_url, self.input_model,
             self.btn_preset_openai, self.btn_preset_hf, self.btn_preset_ollama, self.btn_preset_lmstudio,
-            self.selector_game, self.input_max_steps,
+            self.selector_game, self.input_max_steps, self.input_history_len,
             self.chk_vision, self.chk_sound,
             self.btn_play, self.btn_manual, self.btn_reset, self.btn_next_game
         ]
@@ -381,6 +386,10 @@ class PlayModelApp:
             self.max_steps = int(self.input_max_steps.text.strip())
         except ValueError:
             self.max_steps = 200  # Valor por defecto
+            
+        # Reiniciar el historial de conversación y memoria para el nuevo episodio
+        self.conversation_history = []
+        self.last_executed_action_str = "None (Initial State)"
             
         target_game = None if self.selected_game_id == "random" else self.selected_game_id
         self.log(f"Inicializando juego: {self.selected_game_id}...")
@@ -537,6 +546,12 @@ class PlayModelApp:
         model_name = self.input_model.text.strip()
         vision_enabled = self.chk_vision.checked
         
+        # Obtener el límite de historial de conversación elegido por el usuario
+        try:
+            history_len = int(self.input_history_len.text.strip())
+        except ValueError:
+            history_len = 5
+            
         self.log("Consultando al modelo...")
         
         # Construir prompt pidiendo razonamiento explícito
@@ -563,33 +578,36 @@ class PlayModelApp:
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
             
-        messages = []
-        messages.append({"role": "system", "content": system_prompt})
-        
+        # Construir la nueva entrada del usuario con la observación actual y la última acción ejecutada
         if vision_enabled:
             # Obtener imagen base64
             img_b64 = self.get_grid_image_base64()
-            messages.append({
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": f"Current game: {self.current_game_id}. Step: {self.step_idx}. Cumulative Reward: {self.cum_reward:.2f}. Output your reasoning and next action sequence:"},
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/png;base64,{img_b64}"
-                        }
+            user_content = [
+                {"type": "text", "text": f"Last executed action: {self.last_executed_action_str}. Current game: {self.current_game_id}. Step: {self.step_idx}. Cumulative Reward: {self.cum_reward:.2f}. Output your reasoning and next action sequence:"},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/png;base64,{img_b64}"
                     }
-                ]
-            })
+                }
+            ]
         else:
             # Grid como texto plano
             frame = self.obs.get("frame", np.zeros((self.grid_size, self.grid_size)))
             grid_str = "\n".join(" ".join(str(int(cell)) for cell in row) for row in frame)
-            messages.append({
-                "role": "user",
-                "content": f"Current game: {self.current_game_id}. Step: {self.step_idx}. Cumulative Reward: {self.cum_reward:.2f}.\nGrid Board:\n{grid_str}\n\nOutput your reasoning and next action sequence:"
-            })
+            user_content = f"Last executed action: {self.last_executed_action_str}. Current game: {self.current_game_id}. Step: {self.step_idx}. Cumulative Reward: {self.cum_reward:.2f}.\nGrid Board:\n{grid_str}\n\nOutput your reasoning and next action sequence:"
             
+        # Guardar la entrada en el historial de conversación
+        self.conversation_history.append({"role": "user", "content": user_content})
+        
+        # Gestor inteligente de memoria: acotar el historial al límite elegido (multiplicado por 2 para incluir pares User/Assistant)
+        max_history_entries = history_len * 2
+        if len(self.conversation_history) > max_history_entries:
+            self.conversation_history = self.conversation_history[-max_history_entries:]
+            
+        # Construir el payload de mensajes garantizando que el system prompt sea siempre la primera entrada
+        messages = [{"role": "system", "content": system_prompt}] + self.conversation_history
+        
         # Payload inicial con parámetros estándar
         payload = {
             "model": model_name,
@@ -641,6 +659,9 @@ class PlayModelApp:
             res_data = response.json()
             content = res_data["choices"][0]["message"]["content"].strip()
             
+            # Guardar la respuesta del asistente en el historial de conversación
+            self.conversation_history.append({"role": "assistant", "content": content})
+            
             # Guardar el razonamiento completo para mostrarlo en el panel dedicado
             self.last_model_reasoning = content
             
@@ -657,15 +678,18 @@ class PlayModelApp:
                 # Ejecutar la primera acción encontrada
                 action_str = actions[0]
                 action_id = int(action_str[1])
+                self.last_executed_action_str = f"{action_str} ({ACTION_LABELS[action_id]})"
                 self.log(f"Model Response: {actions}")
                 self.log(f"Executing Action: {action_str} ({ACTION_LABELS[action_id]})")
                 return action_id
             else:
+                self.last_executed_action_str = "A8 (Wait / No-Op)"
                 self.log("No valid action format found, defaulting to A8 (Wait)")
                 # Mostrar los primeros 80 caracteres de la respuesta para depurar por qué no se encontraron acciones
                 self.log(f"Raw response preview: {content[:80]}...")
                 return 8
         except Exception as e:
+            self.last_executed_action_str = "A8 (Wait / No-Op)"
             self.log(f"Network/API Error: {str(e)[:80]}")
             return 8
 
